@@ -70,6 +70,9 @@ pub use export::{
     ExportError, ExportedGlb, export_vox_to_glb, export_voxel_animation_to_glb,
     export_voxel_model_to_glb,
 };
+#[cfg(feature = "solari")]
+pub use bevy::solari::prelude::{RaytracingMesh3d, SolariLighting, SolariPlugins};
+
 use flipbook::FlipbookPlugin;
 pub use flipbook::{FlipbookFrame, FlipbookPlayer, FlipbookRepeatMode};
 #[doc(inline)]

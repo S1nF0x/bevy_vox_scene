@@ -99,6 +99,33 @@ cargo run --example <example name>
 - If you want glass voxels to refract other objects in the scene, enable specular transmission on your camera3d. See the [`transmission-scene` example](/examples/transmission-scene.rs).
 - If you want to render cloud voxels as volumetric fog, add `VolumetricFog` to your camera, and `VolumetricLight` to your lights. `bevy-vox-scene` will convert cloud voxels into density textures and insert them into your scene as `FogVolume`s. See the [`cloud-scene` example](/examples/cloud-scene.rs).
 
+## Optional Solari raytracing
+
+Enable the optional feature when depending on this crate:
+
+```toml
+bevy_vox_scene = { version = "0.23.0", features = ["solari"] }
+```
+
+The loader adds the tangent attribute and `Mesh::enable_raytracing` flag to opaque, non-animated VOX meshes, and attaches Bevy's `RaytracingMesh3d` component to their scene entities. Transmissive models and flipbook frames remain on the raster path. The feature re-exports `SolariPlugins`, `SolariLighting`, and `RaytracingMesh3d`; applications must add `SolariPlugins` and configure the camera themselves.
+
+```rust
+use bevy::camera::CameraMainTextureUsages;
+use bevy::render::render_resource::TextureUsages;
+use bevy_vox_scene::{SolariLighting, SolariPlugins};
+
+app.add_plugins(SolariPlugins);
+
+commands.spawn((
+    Camera3d::default(),
+    CameraMainTextureUsages::default().with(TextureUsages::STORAGE_BINDING),
+    Msaa::Off,
+    SolariLighting::default(),
+));
+```
+
+Solari is experimental and requires a Vulkan adapter exposing the ray-query and binding-array features required by Bevy 0.20. If the adapter does not support them, Bevy logs that the raytracing scene plugin is unavailable; raster rendering remains available.
+
 ## Bevy and Magica Voxel compatibility
 
 | Bevy version | Magica Voxel version                | `bevy-vox-scene` version | 

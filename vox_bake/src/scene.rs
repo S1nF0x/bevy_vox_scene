@@ -2,6 +2,7 @@ use std::{error::Error, fmt};
 
 use dot_vox::{DotVoxData, Frame, SceneNode};
 use glam::{Mat3, Mat4, Quat, Vec3};
+use rayon::prelude::*;
 
 use crate::{BakeError, BakedModel, BakedPalette, VoxBakeSettings, VoxelGrid, bake_model};
 
@@ -119,9 +120,11 @@ pub fn bake_scene(
         settings.uses_srgb,
     );
     let names = model_names(data);
+    // Model baking is independent. Keep indexed collection so scene-node model
+    // references remain stable while using all available CPU cores.
     let models = data
         .models
-        .iter()
+        .par_iter()
         .enumerate()
         .map(|(index, model)| {
             let grid = VoxelGrid::from_vox_model(model, settings.mesh_outer_faces);

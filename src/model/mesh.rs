@@ -5,6 +5,9 @@ use bevy::{
 };
 use vox_bake::{BakedMesh, BakedMeshAtlas};
 
+#[cfg(feature = "solari")]
+use bevy::math::Vec3;
+
 pub(crate) type MeshAtlas = BakedMeshAtlas;
 
 pub(crate) fn to_bevy_mesh(mesh: BakedMesh, asset_usage: RenderAssetUsages) -> Mesh {
@@ -26,6 +29,34 @@ pub(crate) fn to_bevy_mesh(mesh: BakedMesh, asset_usage: RenderAssetUsages) -> M
     }
     bevy_mesh.insert_indices(Indices::U32(mesh.indices));
     bevy_mesh
+}
+
+/// Add the vertex data and mesh flag required by Bevy Solari's raytracing path.
+/// Voxel materials do not contain normal maps, so a stable tangent orthogonal to
+/// each flat voxel-face normal is sufficient.
+#[cfg(feature = "solari")]
+pub(crate) fn prepare_raytracing_mesh(mesh: &mut Mesh) {
+    if !mesh.contains_attribute(Mesh::ATTRIBUTE_TANGENT) {
+        if let Some(VertexAttributeValues::Float32x3(normals)) =
+            mesh.attribute(Mesh::ATTRIBUTE_NORMAL)
+        {
+            let tangents = normals
+                .iter()
+                .map(|normal| {
+                    let normal = Vec3::from_array(*normal).normalize_or_zero();
+                    let reference = if normal.y.abs() < 0.999 {
+                        Vec3::Y
+                    } else {
+                        Vec3::X
+                    };
+                    let tangent = reference.cross(normal).normalize_or_zero();
+                    [tangent.x, tangent.y, tangent.z, 1.0]
+                })
+                .collect::<Vec<_>>();
+            mesh.insert_attribute(Mesh::ATTRIBUTE_TANGENT, tangents);
+        }
+    }
+    mesh.enable_raytracing = true;
 }
 
 #[cfg(test)]

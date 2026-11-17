@@ -16,6 +16,7 @@ pub use components::{
 };
 use parse_scene::parse_scene_graph;
 use serde::{Deserialize, Serialize};
+use std::time::Instant;
 use thiserror::Error;
 use vox_bake::{UnitOffset, VoxBakeSettings, VoxelTextureMode};
 
@@ -28,6 +29,8 @@ pub(super) struct LoadedVoxelModel {
     mesh_asset_usage: RenderAssetUsages,
     has_mesh: bool,
     has_cloud: bool,
+    #[cfg(feature = "solari")]
+    raytracing_compatible: bool,
 }
 
 impl LoadedVoxelModel {
@@ -158,15 +161,43 @@ impl VoxSceneLoader {
         load_context: &'a mut LoadContext,
         settings: &'a VoxLoaderSettings,
     ) -> Result<WorldAsset, VoxLoaderError> {
+        let parse_started = Instant::now();
         let file = match vox_bake::source::parse_vox(bytes) {
             Ok(data) => data,
             Err(error) => return Err(VoxLoaderError::InvalidAsset(anyhow!(error))),
         };
+        info!(
+            "Parsed {}: {} models / {} voxels in {:?}",
+            load_context.path(),
+            file.models.len(),
+            file.models.iter().map(|model| model.voxels.len()).sum::<usize>(),
+            parse_started.elapsed()
+        );
         info!("Loading {}", load_context.path());
         let settings = self.global_settings.clone().unwrap_or(settings.clone());
 
+        let bake_started = Instant::now();
         let baked_scene = vox_bake::bake_scene(&file, &VoxBakeSettings::from(&settings))
             .map_err(|error| VoxLoaderError::InvalidAsset(anyhow!(error)))?;
+        let baked_model_count = baked_scene.models.len();
+        let baked_vertex_count = baked_scene
+            .models
+            .iter()
+            .map(|model| {
+                model
+                    .baked
+                    .surface
+                    .as_ref()
+                    .map_or(0, |surface| surface.mesh.positions.len())
+            })
+            .sum::<usize>();
+        info!(
+            "Baked {} models / {} vertices in {:?}",
+            baked_model_count,
+            baked_vertex_count,
+            bake_started.elapsed()
+        );
+        let asset_started = Instant::now();
         let palette = VoxelPalette::from_baked(baked_scene.palette.clone());
         let mut subassets: HashSet<String> = HashSet::default();
 
@@ -182,18 +213,22 @@ impl VoxSceneLoader {
                 let baked = scene_model.baked;
                 let has_mesh = baked.surface.is_some();
                 let has_cloud = baked.volume.is_some();
+                #[cfg(feature = "solari")]
+                let raytracing_compatible = has_mesh && baked.average_ior.is_none();
                 baked.surface.map(|atlas| {
                     let mut material = palette.create_atlas_material(&atlas, |label, image| {
                         load_context.add_labeled_asset(format!("{}@{}", name, label), image)
                     });
                     crate::model::configure_material(&mut material, baked.average_ior, &model);
-                    load_context.add_labeled_asset(
-                        format!("{}@mesh", name),
-                        crate::model::mesh::to_bevy_mesh(
-                            atlas.mesh,
-                            mesh_asset_usage(settings.retain_mesh_data),
-                        ),
+                    let mut mesh = crate::model::mesh::to_bevy_mesh(
+                        atlas.mesh,
+                        mesh_asset_usage(settings.retain_mesh_data),
                     );
+                    #[cfg(feature = "solari")]
+                    if raytracing_compatible {
+                        crate::model::mesh::prepare_raytracing_mesh(&mut mesh);
+                    }
+                    load_context.add_labeled_asset(format!("{}@mesh", name), mesh);
                     load_context.add_labeled_asset(format!("{}@material", name), material)
                 });
                 baked.volume.as_ref().map(|cloud| {
@@ -214,6 +249,8 @@ impl VoxSceneLoader {
                     mesh_asset_usage: mesh_asset_usage(settings.retain_mesh_data),
                     has_mesh,
                     has_cloud,
+                    #[cfg(feature = "solari")]
+                    raytracing_compatible,
                 }
             })
             .collect();
@@ -227,6 +264,11 @@ impl VoxSceneLoader {
             &mut subassets,
             &baked_scene.layers,
             settings.animation_frames_per_second,
+        );
+        info!(
+            "Created {} voxel model assets and scene graph in {:?}",
+            models.len(),
+            asset_started.elapsed()
         );
 
         Ok(scene)

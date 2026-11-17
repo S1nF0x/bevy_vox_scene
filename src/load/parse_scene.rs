@@ -316,7 +316,7 @@ fn load_child(
         }
         BakedSceneGraphNode::Shape { models } => {
             if models.len() == 1 {
-                attach_model(context, entity, vox_models, models[0]);
+                attach_model(context, entity, vox_models, models[0], true);
             } else if !models.is_empty() {
                 entity.insert((
                     FlipbookPlayer::from_frame_count(models.len()),
@@ -332,7 +332,7 @@ fn load_child(
                                 Visibility::Hidden
                             },
                         ));
-                        attach_model(context, &mut frame, vox_models, model_index);
+                        attach_model(context, &mut frame, vox_models, model_index, false);
                     }
                 });
             }
@@ -345,6 +345,7 @@ fn attach_model(
     entity: &mut EntityWorldMut,
     models: &[LoadedVoxelModel],
     model_index: usize,
+    raytracing: bool,
 ) {
     let Some(model) = models.get(model_index) else {
         warn!("Shape model index {model_index} is out of bounds");
@@ -363,11 +364,19 @@ fn attach_model(
         let mesh: Handle<Mesh> = context.get_label_handle(format!("{}@mesh", model.name()));
         let material: Handle<StandardMaterial> =
             context.get_label_handle(format!("{}@material", model.name()));
+        #[cfg(feature = "solari")]
+        let raytracing_mesh = mesh.clone();
         entity.insert((
             Mesh3d(mesh),
             MeshMaterial3d(material),
             VoxelMeshAssetUsage(model.mesh_asset_usage),
         ));
+        #[cfg(feature = "solari")]
+        if raytracing && model.raytracing_compatible {
+            entity.insert(bevy::solari::prelude::RaytracingMesh3d(raytracing_mesh));
+        }
+        #[cfg(not(feature = "solari"))]
+        let _ = raytracing;
     }
     if model.has_cloud {
         let cloud_image: Handle<Image> =

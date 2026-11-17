@@ -22,6 +22,7 @@ gltf = { version = "1.4.0", optional = true, default-features = false, features 
 ndshape = "0.3.0"
 png = { version = "0.18", optional = true }
 rectangle-pack = "0.4.2"
+rayon = "1.12"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = { version = "1.0.140", optional = true, features = ["raw_value"] }
 thiserror = { version = "2.0.12", optional = true }
